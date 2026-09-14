@@ -1,0 +1,65 @@
+name: Build Electron Windows Desktop App
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch: # 支持在 GitHub 网页端手动触发打包
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      # 1. 检出代码
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. 安装并配置 pnpm (匹配 package.json 指定的 pnpm@11.7.0)
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      # 3. 设置 Node.js 环境 (匹配 package.json 指定的 node ^22.19.0)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      # 4. 配置 Windows C++ 构建工具环境 (防止 native-system 或 node-gyp 编译报错)
+      - name: Setup Windows Build Environment
+        uses: microsoft/setup-msbuild@v2
+
+      # 5. 安装项目依赖
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # 6. 执行核心基础库和原生模块编译
+      - name: Build native and libraries
+        run: |
+          pnpm run build:native-system
+          pnpm run build:lib
+
+      # 7. 预处理 Desktop 模块
+      - name: Prepare Desktop Package
+        run: pnpm run prepare:desktop
+
+      # 8. 打包 Electron Windows 应用 (x64 免签名版)
+      - name: Package Windows App
+        run: pnpm run package:desktop:win:x64:unsigned
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 9. 将打包好的安装包/exe产物上传到 GitHub 页面供下载
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deepseek-desktop-windows-x64
+          path: |
+            apps/desktop/dist/*.exe
+            apps/desktop/dist/*.zip
+            apps/desktop/out/
+          retention-days: 7
